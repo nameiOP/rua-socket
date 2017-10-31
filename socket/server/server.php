@@ -2,9 +2,9 @@
 namespace rsk\server;
 
 
-use rua\traits\eventable;
-use rua\traits\macroable;
-use rsk\traits\socketable;
+//use rua\traits\eventable;
+//use rua\traits\macroable;
+//use rsk\traits\socketable;
 
 
 /**
@@ -18,7 +18,7 @@ use rsk\traits\socketable;
 abstract class server {
 
 
-    use socketable,macroable,eventable;
+    //use socketable,macroable,eventable;
 
 
 
@@ -51,25 +51,32 @@ abstract class server {
     public function start(){
 
 
-        $serverConfig = $this->setServer();
-        $result = $this->createSocket($serverConfig['protocol'],$serverConfig['ip'],$serverConfig['port']);
-        if(false === $result){
-            return false;
-        }
+        // $serverConfig = $this->setServer();
+        // $result = $this->createSocket($serverConfig['protocol'],$serverConfig['ip'],$serverConfig['port']);
+        // if(false === $result){
+        //     return false;
+        // }
 
 
         //初始化服务器信息
         $this->init();
 
+
+        $this->run();
+
         //展示ui
         $this->displayUI();
 
+
+
+
+
         //默认采用socket_select方式接收客户端连接
 
-        \Builder::
 
-        $this->loop = new select($this);
-        $this->loop->loop();
+
+        //$this->loop = new select($this);
+        //$this->loop->loop();
 
     }
 
