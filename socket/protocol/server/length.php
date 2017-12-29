@@ -1,8 +1,14 @@
 <?php
-namespace protocol\server;
+namespace rsk\protocol\server;
 
 
-
+/**
+ * Class length
+ * @package rsk\protocol\server
+ *
+ * 一般用于长连接
+ * 固定包头+变长包体
+ */
 class length extends serverProtocol
 {
 
@@ -11,25 +17,25 @@ class length extends serverProtocol
      * header 长度，采用固定4个字节的方式
      * @var int
      */
-    protected $head_size = 4;
+    protected $headSize = 4;
 
 
 
 
     /**
-     * body 长度，从header中解码获取，变长
+     * body 总长度，从header中解码获取，变长
      * @var int
      */
-    protected $body_size = 0;
+    protected $bodySize = 0;
 
 
 
 
     /**
-     * 第一次读取
+     * buffer 包涵head头部
      * @var bool
      */
-    protected $first_read = true;
+    protected $headInBuffer = true;
 
 
 
@@ -68,72 +74,108 @@ class length extends serverProtocol
      * @return bool false:不需要继续接收消息 ，true:继续接收消息
      * @author liu.bin 2017/9/29 14:37
      */
-    public function read_buffer($buffer=''){
+    public function readBuffer($buffer=''){
 
         //消息格式不正确
         if('' === $buffer || is_null($buffer)){
             $this->over();
-            console('??');
             return false;
         }
 
 
         //如果输入的字节 >= 最大长度的话，数据错误，数据重置
-        if($this->in_size >= $this->max_in_length){
-            $this->over();
-            console('---');
-            return false;
-        }
-
-
-        //没有消息body,数据错误
-        if(!$this->first_read &&  (0 === $this->body_size)){
+        if($this->readLength >= $this->maxReadLength){
             $this->over();
             return false;
         }
 
 
-        //第一次读取消息
-        if($this->first_read){
 
-            $this->buffer = $this->decode($buffer);//11
+
+
+        if($this->headInBuffer){
+
+
+            /**
+             * 读取有head的消息体
+             */
+
+            //解包
+            $this->buffer = $this->decode($buffer);
 
             //获取头部
-            $head = substr($buffer,0,$this->head_size);
+            $head = substr($buffer,0,$this->headSize);
 
-            if(empty($head)){
+            //获取body长度
+            $this->bodySize = empty($head) ? 0 : unpack('N',$head)[1];
+
+            //检测body是否为空
+            if(0 === $this->bodySize){
+                $this->over();
                 return false;
-            }else{
-                //从头部获取body长度
-                $this->body_size = unpack('N',$head)[1];
             }
 
-
             //获取body
-            $body = substr($buffer,$this->head_size);
-            $this->first_read = false;
+            $body = substr($buffer,$this->headSize);
+            $this->headInBuffer = false;
 
         }else{
 
-            //获取body
+
+            /**
+             * 读取没有head的消息体
+             */
             $body = $buffer;
         }
 
 
-        $this->in_data .= $body;
-        $this->in_size += strlen($body);
+        $this->readBuffer .= $body;
+        $this->readLength += strlen($body);
 
-        //是否还有剩余数据没有接收：$left_length 还剩多少长度没有接收（第一次：$this->in_size==0）
-        $left_length = $this->body_size - $this->in_size;
 
-        if($left_length > $this->buffer_size){
-            return true;
-        }elseif ($left_length <= 0 ){
+        /**
+         * 是否还有剩余数据没有接收：
+         *
+         * $leftLength 还剩多少长度没有接收
+         */
+        $leftLength = $this->bodySize - $this->readLength;
+
+
+        /**
+         * 没有剩余的body
+         *
+         * 不用接收buffer
+         */
+        if($leftLength <= 0){
             return false;
-        }elseif($left_length < $this->buffer_size){
-            $this->buffer_size = $left_length;
+        }
+
+
+
+
+        if($leftLength > $this->bufferSize){
+
+            /**
+             * 剩余的body长度 > 单次接受的bufferSize
+             *
+             * 继续接收buffer
+             */
+            return true;
+        }else{
+
+
+            /**
+             * 剩余的body长度 <= 单次接收的bufferSize
+             *
+             * 重置下次接收buffer的长度,继续接收
+             */
+            $this->bufferSize = $leftLength;
             return true;
         }
+
+
+
+
 
     }
 
@@ -148,10 +190,9 @@ class length extends serverProtocol
      */
     public function over()
     {
-        $this->first_read = true;
-        $this->body_size = 0;
-        $this->buffer_size = 10;
-        console('重置');
+        $this->headInBuffer = true;
+        $this->bodySize = 0;
+        $this->bufferSize = 10;
         parent::over();
     }
 

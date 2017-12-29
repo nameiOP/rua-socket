@@ -1,10 +1,8 @@
 <?php
-namespace protocol\server;
-
-use protocol\protocol;
+namespace rsk\protocol\server;
 
 
-
+use rsk\protocol\protocol;
 abstract class serverProtocol extends protocol
 {
 
@@ -18,8 +16,8 @@ abstract class serverProtocol extends protocol
     public function over()
     {
         $this->buffer = '';
-        $this->in_data = '';
-        $this->in_size = 0;
+        $this->readBuffer = '';
+        $this->readLength = 0;
     }
 
 

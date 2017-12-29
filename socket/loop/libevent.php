@@ -8,7 +8,10 @@ class libevent extends loop{
 
 
 
-    public function loop()
+    /**
+     * @param $timeout
+     */
+    public function loop($timeout)
     {
 
     }

@@ -1,15 +1,26 @@
 <?php
-namespace protocol\server;
+namespace rsk\protocol\server;
 
 
 /**
- * EOF检测协议
+ * EOF检测协议:做短连接用
+ *
  * 在数据发送结尾加入特殊字符，表示一个请求传输完毕
- * 该协议只解决数据包合并，不解决拆分。如果$package_eof后面还有数据，则舍弃
+ * 该协议只解决数据包合并，不解决数据包拆分。
+ *
+ * 注意:
+ * 一个数据包中包涵多个/r/n 或者 多个包被tcp客户端打包成一个包发送的时候:
+ * 数据包会出现该情况:11/r/n22223333/r/n
+ * bufferSize = 10,
+ * 第一条消息:11
+ * 第一条消息:3333
+ * 2222数据丢失,因为在第一次读包的数据为11/r/n2222,第二次读包数据为[3333/r/n]
+ * 此模式适合一次只发一个包,响应后即断开。比如http的get模式
+ *
  * Class text
  * @package protocol\server
  */
-class text extends serverProtocol
+class eof extends serverProtocol
 {
 	
 
@@ -19,17 +30,6 @@ class text extends serverProtocol
 	//边界符正则
     private $eof_pattern = '/\/r\/n/';
 
-    /**
-     * 是否到达边界
-     * @var bool
-     */
-    private $eof_end = false;
-
-    /**
-     * 上一次接收的buffer的最后x(x由$package_eof长度决定)个字符，主要解决$package_eof被分开发送的情况
-     * @var string
-     */
-    private $pre_last_buffer = '';
 
 
 	/**
@@ -64,27 +64,25 @@ class text extends serverProtocol
      * @return bool false:不需要继续接收消息 ，true:继续接收消息
      * @author liu.bin 2017/9/29 14:37
      */
-    public function read_buffer($buffer = '')
+    public function readBuffer($buffer = '')
     {
 
-        console('解码之前 ：' . $buffer);
         //消息格式不正确
-        if(empty($buffer)){
+        if('' === $buffer || is_null($buffer)){
             $this->over();
             return false;
         }
 
 
         //如果接收的字节 >= 最大长度的话，就不用接收消息,数据重置
-        if($this->in_size >= $this->max_in_length){
+        if($this->readLength >= $this->maxReadLength){
             $this->over();
             return false;
         }
 
-        //解码
-        $buffer = $this->decode($buffer);
 
-        $this->buffer = $buffer;
+        //解码
+        $this->buffer = $this->decode($buffer);
         return $this->eof($this->buffer) ? false : true;
 
     }
@@ -99,28 +97,22 @@ class text extends serverProtocol
      */
     private function eof($buffer){
 
-        $this->in_data .= $buffer;
+        $this->readBuffer .= $buffer;
+
         //检测是否有 package_eof
-        if(preg_match($this->eof_pattern, $this->in_data)){
-            list($this->in_data) = explode($this->package_eof,$this->in_data,2);
-            $this->in_size = strlen($this->in_data);
+        if(preg_match($this->eof_pattern, $this->readBuffer)){
+
+            list($this->readBuffer) = explode($this->package_eof,$this->readBuffer,2);
+            $this->readLength = strlen($this->readBuffer);
             return true;
+
         }else{
-            $this->in_size = strlen($this->in_data);
+
+            $this->readLength = strlen($this->readBuffer);
             return false;
+
         }
-    }
 
-
-
-    /**
-     * 重置
-     * @author liu.bin 2017/9/30 13:34
-     */
-    public function over()
-    {
-        $this->eof_end = false;
-        parent::over();
     }
 
 }
