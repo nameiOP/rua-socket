@@ -3,21 +3,16 @@ namespace rsk\protocol\server;
 
 
 /**
- * EOF检测协议:做短连接用
  *
- * 在数据发送结尾加入特殊字符，表示一个请求传输完毕
- * 该协议只解决数据包合并，不解决数据包拆分。
  *
- * 注意:
- * 一个数据包中包涵多个/r/n 或者 多个包被tcp客户端打包成一个包发送的时候:
- * 数据包会出现该情况:11/r/n22223333/r/n
- * bufferSize = 10,
- * 第一条消息:11
- * 第一条消息:3333
- * 2222数据丢失,因为在第一次读包的数据为11/r/n2222,第二次读包数据为[3333/r/n]
- * 此模式适合一次只发一个包,响应后即断开。比如http的get模式
+ * EOF协议:
+ *      数据封包:   USER_DATA.PHP_EOL
+ *      读取方式:   socket_read(PHP_NORMAL_READ)
+ *      说明:      循环读取 $buffer_size 长度的数据,遇到 PHP_EOL 数据包读取完成;
  *
- * Class text
+ *
+ *
+ * Class eof
  * @package protocol\server
  */
 class eof extends serverProtocol
@@ -25,10 +20,27 @@ class eof extends serverProtocol
 	
 
 	//eof边界检测符
-	private $package_eof = '/r/n';
-	
-	//边界符正则
-    private $eof_pattern = '/\/r\/n/';
+	private $package_eof = PHP_EOL;
+
+
+
+
+    /**
+     * 构造器
+     */
+    public function __construct(){
+
+        parent::__construct();
+
+        /**
+         * tcp 协议中,如果做短连接,需要设置为 CONNECT_ONCE;
+         * 也可以根据协议内容,动态的设置TCP为长连接还是短连接
+         */
+        //$this->setConnectLife(self::CONNECT_ONCE);
+
+    }
+
+
 
 
 
@@ -38,7 +50,6 @@ class eof extends serverProtocol
      * @return string
      * */
     public function decode($mess){
-        $mess = str_replace(PHP_EOL, '', $mess);
         return $mess;
 	}
 
@@ -50,8 +61,7 @@ class eof extends serverProtocol
      * @return string
      * */
     public function encode($mess){
-        $mess = str_replace(PHP_EOL, '', $mess);
-		return $mess . $this->package_eof;
+		return $mess;
 	}
 
 
@@ -59,31 +69,55 @@ class eof extends serverProtocol
 
 
     /**
-     * 是否继续读取buffer
+     * 是否读取结束
      * @param string $buffer
-     * @return bool false:不需要继续接收消息 ，true:继续接收消息
+     * @return bool|null
+     * true:读取结束,消息完整;
+     * false:消息未完整;
+     * null:读取错误;
      * @author liu.bin 2017/9/29 14:37
      */
-    public function readBuffer($buffer = '')
+    public function readEOF($buffer = '')
     {
 
-        //消息格式不正确
-        if('' === $buffer || is_null($buffer)){
+
+        $this->buffer = $buffer;
+
+
+        //连接关闭
+        if(self::CONNECT_CLOSE == $this->getConnectLife()){
+            return null;
+        }
+
+
+
+        /**
+         * 触发socket_select()读 如果长度内容为空,则可以判定是客户端发送FIN标识数据包,主动请求关闭;
+         */
+        if(is_empty($this->buffer)){
             $this->over();
+            $this->setConnectLife(self::CONNECT_CLOSE);
             return false;
         }
+
+
 
 
         //如果接收的字节 >= 最大长度的话，就不用接收消息,数据重置
         if($this->readLength >= $this->maxReadLength){
             $this->over();
-            return false;
+            $this->setConnectLife(self::CONNECT_CLOSE);
+            return null;
         }
 
 
-        //解码
-        $this->buffer = $this->decode($buffer);
-        return $this->eof($this->buffer) ? false : true;
+        if($this->_eof($this->buffer)){
+            //到达EOF,不需要继续读取
+            return true;
+        }else{
+            //没有到家边界,需要继续读取
+            return false;
+        }
 
     }
 
@@ -92,24 +126,28 @@ class eof extends serverProtocol
     /**
      * 检测 数据到达边界
      * @param string $buffer
-     * @return bool true:到达边界；false没有到达边界
+     * @return bool
+     * true:    到达EOF;
+     * false:   没有到达EOF;
      * @author liu.bin 2017/9/30 13:25
      */
-    private function eof($buffer){
+    private function _eof($buffer){
 
         $this->readBuffer .= $buffer;
 
-        //检测是否有 package_eof
-        if(preg_match($this->eof_pattern, $this->readBuffer)){
+        //检测是否有 eof
+        if(false === ($str_pos = strpos($this->readBuffer,$this->package_eof)) ){
 
-            list($this->readBuffer) = explode($this->package_eof,$this->readBuffer,2);
+            //没有eof
             $this->readLength = strlen($this->readBuffer);
-            return true;
+            return false;
 
         }else{
 
+            //有eof
+            $this->readBuffer = substr($this->readBuffer,0,$str_pos);
             $this->readLength = strlen($this->readBuffer);
-            return false;
+            return true;
 
         }
 

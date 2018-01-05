@@ -33,8 +33,16 @@ abstract class protocol
 
 
 
+
+    /**
+     * @var string 协议名称
+     */
+    public $name = '';
+
+
+
 	/**
-     * 缓冲区数据
+     * 读取一次的缓冲区数据
      */
 	protected $buffer = '';
 
@@ -126,8 +134,6 @@ abstract class protocol
 
 
 
-
-
     /**
      * 返回已接收的数据
      * @author liu.bin 2017/9/30 10:08
@@ -142,14 +148,25 @@ abstract class protocol
 
 
 
+    /**
+     * 获取协议名称
+     */
+    public function getName(){
+        return $this->name;
+    }
+
+
+
 
     /**
-     * 是否继续读取buffer
+     * 是否读取结束
      * @param string $buffer
-     * @return bool false:不需要继续接收消息 ，true:继续接收消息
+     * @return bool
+     * true:读取结束,消息完整;
+     * false:消息未完整;
      * @author liu.bin 2017/9/29 14:37
      */
-    abstract public function readBuffer($buffer='');
+    abstract public function readEOF($buffer='');
 
 
 

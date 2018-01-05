@@ -10,7 +10,7 @@ namespace rsk\protocol\server;
  * socket有消息后,connect读取固定长度(bufferSize)的数据包。并当作一个完整数据包后直接响应
  * 适用范围 : 长连接,短连接,开发调试,心跳检测
  */
-class rr extends serverProtocol
+class srr extends serverProtocol
 {
 
 	

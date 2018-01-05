@@ -2,13 +2,8 @@
 namespace rsk\server;
 
 
-use rsk\loop\ioloop;
-use rsk\loop\select;
-use rsk\event\startEvent;
-use rua\traits\eventable;
-use rua\traits\macroable;
-use rsk\traits\socketable;
-use rsk\traits\streamsocketable;
+
+
 
 /**
  * Class server
@@ -18,97 +13,13 @@ use rsk\traits\streamsocketable;
  * 服务器消息由轮训或事件触发自动接收，采用自定义协议处理数据包，通过回调通知应用程序
  *
  */
-class server {
-
-
-    //use streamsocketable,macroable,eventable;
-	use socketable,macroable,eventable;
-
-	/**
-	 * 服务器启动
-	 * @var string
-	 */
-	const EVENT_RSK_START = 'rua_server_start';
-
-
-	/**
-	 * 服务器重启
-	 * @var string
-	 */
-	const EVENT_RKS_RESTART = 'rua_server_restart';
-
-
-	/**
-	 * 服务器连接
-	 * @var string
-	 */
-	const EVENT_RSK_CONNECT = 'rua_server_connect';
-
-
-	/**
-	 * 接收消息
-	 * @var string
-	 */
-	const EVENT_RSK_RECEIVE = 'rua_server_receive';
-
-	/**
-	 * 服务器关闭
-	 * @var string
-	 */
-	const EVENT_RSK_STOP = 'rua_server_stop';
+class server extends baseServer{
 
 
 
-	/**
-	 * 连接对象集合
-	 * @var \rua\helpers\collection
-	 */
-	public $connCollect;
+	//最大连接数
+	public $maxConnectLength = 5;
 
-
-	/**
-	 * socket读 集合
-	 * @var \rua\helpers\collection
-	 */
-	public $socketReadCollect;
-
-
-
-
-	/**
-	 * socket写 集合
-	 * @var \rua\helpers\collection
-	 */
-	public $socketWriteCollect;
-
-
-	/**
-	 * 主机
-	 * @var string
-	 */
-	public $host = '';
-
-
-	/**
-	 * 协议
-	 * @var string
-	 */
-	public $protocol = '';
-
-
-	/**
-	 * 协议类
-	 * @var string
-	 */
-	public $protocolClass = '';
-
-
-
-	/**
-	 * 端口
-	 * @var int
-	 */
-	public $port = 0;
 
 
 	/**
@@ -116,14 +27,19 @@ class server {
 	 */
 	public function displayUI(){
 
-		echo '========================================'.PHP_EOL;
-		echo '----- PHP VERSION:' .PHP_VERSION .'           -----'.PHP_EOL;
-		echo '----- rua socket version :0.0.1    -----'.PHP_EOL;
-		echo '----- listener:'.$this->protocol .'://'.$this->host . ':' . $this->port . ' -----'.PHP_EOL;
-		echo '----- please ctrl+c to stop server -----'.PHP_EOL;
-		echo '========================================'.PHP_EOL;
+		echo '==================================================='.PHP_EOL;
+		echo '---------   PHP VERSION:' .PHP_VERSION .'           ----------'.PHP_EOL;
+		echo '---------   rua socket version :0.0.1    ----------'.PHP_EOL;
+		echo '---------   io model : '.\Builder::$app->get('io').'   ----------'.PHP_EOL;
+		echo '---------   listener  '.\Builder::$app->get('protocol')->name .'://'.$this->host . ':' . $this->port . ' ----------'.PHP_EOL;
+		echo '==================================================='.PHP_EOL;
+		echo '---------   please ctrl+c to stop server ----------'.PHP_EOL;
+		echo PHP_EOL.PHP_EOL.PHP_EOL.PHP_EOL;
 
 	}
+
+
+
 
 
     /**
@@ -134,117 +50,151 @@ class server {
     public function init(){
 
 
-    }
+
+		//处理 socket信号
+		$this->installSignal();
+
+	}
 
 
-    /**
-     * 启动服务器
-     * @author liu.bin 2017/9/27 14:56
-     */
-    public function start(){
+
+
+
+
+	/**
+	 * socket 信号处理
+	 */
+	public function installSignal(){
 
 
 		/**
-		 * 创建 socket
+		 * 忽略 SIGPIPE 信号
+		 *
+		 * 该连接的写半部关闭(主动发送FIN包的TCP连接)。对这样的套接字的写操作将会产生SIGPIPE信号。
+		 * 所以我们的网络程序基本都要自定义处理SIGPIPE信号。因为SIGPIPE信号的默认处理方式是程序退出。
+		 * 服务器端socket主动关闭客户端连接时,继续send数据,则会产生该 SIGPIPE 信号。
 		 */
-        $result = $this->createSocket($this->host,$this->port);
-		if(false === $result){
-			//console('socket error');
-            throw new \Exception('socket error');
-		}
+		pcntl_signal(SIGPIPE, SIG_IGN, false);
 
-
-        //初始化服务器信息
-        $this->init();
-
-        //展示ui
-        $this->displayUI();
-
-		//server socket
-		$this->addConn($this->fd,$this);
-
-		//触发事件
-		$startEvent = new startEvent();
-		$startEvent->server = $this;
-		$this->trigger(self::EVENT_RSK_START,$startEvent);
-
-
-        //默认采用socket_select方式接收客户端连接
-        (new select())->loop();
-		//(new ioloop())->loop();
 
 	}
 
 
-	/**
-	 * 发送消息
-	 */
-	public function send($fd,$data){
-		$socket = $this->socketReadCollect->get($fd);
-		return $this->socketSend($socket,$data);
-	}
+
 
 
 	/**
-	 * 关闭
-	 */
-	public function close($fd){
-		$socket = $this->socketReadCollect->get($fd);
-		$this->removeConn($fd);
-		return $this->socketClose($socket);
-
-	}
-
-
-	/**
-	 *
+	 * 将客户端连接 加入队列
 	 * @param $id int
 	 * @param $conn \rsk\server\connect | \rsk\server\server
 	 * @return bool
 	 */
-	public function addConn($fd,$conn){
-		if(empty($this->connCollect)){
-			$this->connCollect = collect([$conn]);
-		}else{
-			$this->connCollect->put($fd,$conn);
-		}
-
-		if(empty($this->socketReadCollect)){
-			$this->socketReadCollect = collect([$conn->getSocket()]);
-		}else{
-			$this->socketReadCollect->put($fd,$conn->getSocket());
-		}
+	public function addConnect($conn,$fd=0){
 
 
-		if(empty($this->socketWriteCollect)){
-			$this->socketWriteCollect = collect([$conn->getSocket()]);
-		}else{
-			$this->socketWriteCollect->put($fd,$conn->getSocket());
+
+		//* 第一次表明由server对象初始化,不需要加入客户端集合
+		if(is_null($this->connectQueues)){
+			$this->connectQueues = collect();
+			//* 将socket 加入集合
+			$this->_socket[$fd] = $conn->getSocket();
+			return true;
 		}
 
 
+		//验证集合是否最大列表
+		if($this->connectQueues->count() >= $this->maxConnectLength){
+			return false;
+		}
+
+		//* 将客户端连接加入队列
+		$this->connectQueues->put($fd,$conn);
+
+		//* 将socket 加入集合
+		$this->_socket[$fd] = $conn->getSocket();
 		return true;
 	}
 
+
+
+
 	/**
-	 * 移除连接对象
-	 *
+	 * 移除客户端连接
+	 * @param $fd
+	 * @return bool
 	 */
-	public function removeConn($fd){
-	
-		if(! empty($this->connCollect)){
-			$this->connCollect->forget($fd);
+	public function removeConnect($fd){
+
+
+		//客户端连接是否存在
+		if($this->connectQueues->has($fd)){
+
+			$this->connectQueues->forget($fd);
+			if(array_key_exists($fd,$this->_socket)){
+				$this->socketClose($this->_socket[$fd]);
+				unset($this->_socket[$fd]);
+			}
+
+			return true;
 		}
 
-		if(! empty($this->socketReadCollect)){
-			$this->socketReadCollect->forget($fd);
-		}
-
-
-		if(! empty($this->socketWriteCollect)){
-			$this->socketWriteCollect->forget($fd);
-		}
-
+		return false;
 	}
+
+
+
+	/**
+	 * 获取客户端连接
+	 * @param $fd
+	 * @return bool|object
+	 */
+	public function getConnect($fd=0){
+
+		//返回全部连接
+		if(empty($fd)){
+			return $this->connectQueues;
+		}
+
+		//客户端连接是否存在
+		if($this->connectQueues->has($fd)){
+			return $this->connectQueues->get($fd);
+		}
+		return false;
+	}
+
+
+
+
+
+	/**
+	 * 客户端是否存在
+	 */
+	public function hasConnect($fd){
+		return $this->connectQueues->has($fd);
+	}
+
+
+
+
+	/**
+	 * 获取 客户端 socket
+	 * @param int $fd
+	 * @return array|bool|resource
+	 */
+	public function getConnSocket($fd=0){
+		if(0 === $fd){
+			return $this->_socket;
+		}else{
+			return array_key_exists($fd,$this->_socket) ? $this->_socket[$fd] : false;
+		}
+	}
+
+
+
+
+
+
+
+
 
 }

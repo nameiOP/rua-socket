@@ -12,7 +12,7 @@ trait socketable
     /**
      * @var int 连接编号
      */
-    protected $fd=0;
+    protected $fd = 0;
 
 
 
@@ -29,7 +29,7 @@ trait socketable
      * true 阻塞模式
      * false 非阻塞模式
      */
-    public $block;
+    public $block = true;
 
 
 
@@ -60,11 +60,33 @@ trait socketable
     public function createSocket($host,$port){
 
 
-
+        //创建socket
         if (($sock = socket_create(AF_INET, SOCK_STREAM, SOL_TCP)) === false) {
             console("socket_create() failed: reason: " . socket_strerror(socket_last_error()) );
             return false;
         }
+
+        /**
+         * 设置socket客户端连接心跳检测,默认7200秒,
+         * 一般由应用层实现心跳,不调用系统底层的 SO_KEEPALIVE
+         */
+        /*
+        if(!socket_set_option($sock,SOL_SOCKET,SO_KEEPALIVE,1)){
+            console("socket_set_option() failed: reason: " . socket_strerror(socket_last_error()) );
+            return false;
+        }
+        */
+
+
+        //开启地址重复利用
+
+        if (!socket_set_option($sock, SOL_SOCKET, SO_REUSEADDR, 1)) {
+            console('Unable to set option on socket: '. socket_strerror(socket_last_error()));
+            return false;
+        }
+
+
+
 
         if (socket_bind($sock, $host, $port) === false) {
             console( "socket_bind() failed: reason: " . socket_strerror(socket_last_error($sock)));
@@ -90,6 +112,10 @@ trait socketable
 	/**
 	 * 接受socket请求
 	 * 此方法可以创建客户端socket对象
+     * @param resource $socket master-socket
+     * @return bool|resource
+     *
+     * @author liu.bin
 	 */
 	public function socketAccept($socket){
 
@@ -103,12 +129,15 @@ trait socketable
          *
          * 服务端每次accept()，就会从队列中取出一个元素。
          */
-		$this->socket = socket_accept($socket);
-        if(!$this->socket){
-            return false;
+		$msg_socket = socket_accept($socket);
+        if(is_resource($msg_socket)){
+            // todo
+            $address = '';
+            $port = 0;
+            socket_getpeername($msg_socket,$address,$port);
+            return $msg_socket;
         }
-		$this->fd = socket_to_fd($this->socket);
-		return true;
+        return false;
 	}
 
 
@@ -125,9 +154,7 @@ trait socketable
     /**
      * 从socket读取数据
      *
-     * socket_read:
-     *      1:PHP_NORMAL_READ   循环调用 recv,遇到\n \r返回,应用端需要自行判断消息完整;
-     *      2:PHP_BINARY_READ   等价于socket_recv;
+
      *
      * socket_recv:
      *      1:MSG_OOB           协议的实现为了提高效率，往往在应用层传来少量的数据时不马上发送，而是等到数据缓冲区里有了一定量的数据时才一起发送，
@@ -136,26 +163,53 @@ trait socketable
      *                          MSG_PEEK标志会将套接字接收队列中的可读的数据拷贝到缓冲区，但不会使套接子接收队列中的数据减少，
      *                          常见的是：例如调用recv或read后，导致套接字接收队列中的数据被读取后而减少，而指定了MSG_PEEK标志，可通过返回值获得可读数据长度，
      *                          并且不会减少套接字接收缓冲区中的数据，所以可以供程序的其他部分继续读取。
-     *      3:MSG_WAITALL       [阻塞模式]     接收指定长度的值,如果缓冲区没有数据,则一直阻塞。有数据,则按最大的读,并立即返回。
+     *      3:MSG_WAITALL       [阻塞读取]     在接收到指定长度的字符之前,进程将一直阻塞,一般用作消息长度是固定的协议
      *      4:MSG_DONTWAIT      [非阻塞模式]   接收指定长度的值,如果缓冲区没有数据,则立即返回。有数据,则按最大的读,并立即返回。
      *
+     *
+     * @param $socket
+     * @param $buffer_size
+     * @param $flag
+     * @return bool|string
+     *
      */
-    public function socketReceive($socket,$buffer_size){
+    public function socketReceive($socket,$buffer_size,$flag=MSG_DONTWAIT){
 
-        //console('socketReceive() - '.socket_to_fd($socket).' - begin and [buffer_size] = '.$buffer_size,'server');
+        $buffer = '';
+        if(socket_recv($socket,$buffer,$buffer_size,$flag)){
 
-        //$buffer = '';
+            return $buffer;
+        }else{
+            console( "socket_recv() failed: reason: " . socket_strerror(socket_last_error($socket)));
 
-        $buffer = @socket_read($socket, $buffer_size, PHP_BINARY_READ);
-        //$result = @socket_recv($socket,$buffer,$buffer_size,MSG_WAITALL);
-        //@socket_recv($socket,$buffer,$buffer_size,0);
+            return false;
+        }
 
+    }
+
+
+    /**
+     * socket_read:
+     *      1:PHP_NORMAL_READ   按最大长度读取,遇到 PHP_EOL 返回,应用程序需要自行判断消息完整;
+     *      2:PHP_BINARY_READ   等价于 socket_recv;
+     *
+     *
+     * 从客户端socket读取消息
+     * @param $socket
+     * @param $buffer_size
+     * @param int $read_type
+     * @return bool|string
+     */
+    public function socketRead($socket,$buffer_size,$read_type=PHP_BINARY_READ){
+        $buffer = socket_read($socket, $buffer_size, $read_type);
         if($buffer){
             return $buffer;
         }else{
             return false;
         }
     }
+
+
 
 
     /**
@@ -165,6 +219,7 @@ trait socketable
      * @param array $except
      * @param $tv_sec
      * @param int $tv_usec
+     * @return int
      */
     public function socketSelect(array &$read, array &$write, array &$except, $tv_sec, $tv_usec = 0){
         return socket_select($read, $write, $except, $tv_sec, $tv_usec);

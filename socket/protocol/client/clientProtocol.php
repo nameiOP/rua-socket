@@ -1,7 +1,8 @@
 <?php
-namespace protocol\client;
+namespace rsk\protocol\client;
 
-use protocol\protocol;
+
+use rsk\protocol\protocol;
 
 
 
