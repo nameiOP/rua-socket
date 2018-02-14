@@ -4,13 +4,14 @@
     "keywords": ["php", "rua","socket"],
     "authors" : [
         {
-            "name": "liubin",
+            "name": "liu.bin",
             "email": "ruabye@126.com",
             "homepage": "http://blog.ruaby.com"
         }
     ],
     "require": {
-        "php": ">=5.6"
+        "php": ">=5.6",
+        "nameiop/rua":"~0.0.2"
     },
     "require-dev": {
     },
@@ -18,7 +19,7 @@
     	"files":[
         ],
         "psr-4": {
-            "rsk\\":"socket/"
+            "rsk\\":"lib/"
         }
     }
 }

@@ -89,14 +89,6 @@ class eof extends serverProtocol
 
         $this->buffer = $buffer;
 
-
-        //连接关闭
-        if(self::CONNECT_CLOSE == $this->getConnectLife()){
-            return null;
-        }
-
-
-
         /**
          * 触发socket_select()读 如果长度内容为空,则可以判定是客户端发送FIN标识数据包,主动请求关闭;
          *
@@ -108,7 +100,6 @@ class eof extends serverProtocol
          */
         if(is_empty($this->buffer)){
             $this->bufferRecovery();
-            $this->setConnectLife(self::CONNECT_CLOSE);
             return false;
         }
 
@@ -118,13 +109,11 @@ class eof extends serverProtocol
         //如果接收的字节 >= 最大长度的话，就不用接收消息,数据重置
         if($this->readLength >= $this->maxReadLength){
             $this->bufferRecovery();
-            $this->setConnectLife(self::CONNECT_CLOSE);
             return null;
         }
 
         if($this->_eof($this->buffer)){
             //到达EOF,不需要继续读取
-            $this->_readBuffer = $this->readBuffer;
             return true;
         }else{
             //没有到家边界,需要继续读取

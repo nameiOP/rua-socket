@@ -57,13 +57,6 @@ abstract class protocol
 
 
 
-    /**
-     * @var string 只有消息读取完成,该值才会被重置;
-     */
-    protected $_readBuffer = '';
-
-
-
 
 
     /**
@@ -120,6 +113,7 @@ abstract class protocol
 
     /**
      * 获取buffer size
+     * @return int
      * @author liu.bin 2017/9/29 13:37
      */
 	public function getBufferSize(){
@@ -147,8 +141,9 @@ abstract class protocol
      * @author liu.bin 2017/9/30 10:08
      */
     public function getReadData(){
+        $buffer = $this->readBuffer;
         $this->bufferRecovery();
-        return $this->_readBuffer;
+        return $buffer;
     }
 
 
